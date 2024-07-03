@@ -1,42 +1,56 @@
 from flask import Flask, request, jsonify
-from models import db, ExampleNames
-from config import Config
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import BadRequest
+from pydantic import ValidationError
+
+from db import session_factory
+from models import ExampleNames
+from schemas import ExampleNamesVal
+
 
 app = Flask(__name__)
-app.config.from_object(Config)
-db.init_app(app)
 
 
 @app.route('/add', methods=['POST'])
-def add_example_name():
-    data = request.get_json()
-    if 'name' not in data:
-        return jsonify({'error': 'Name is required'}), 400
+def add_record():
     try:
-        new_example_name = ExampleNames(name=data['name'])
-        db.session.add(new_example_name)
-        db.session.commit()
-        return jsonify({'message': 'Record added successfully'}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        try:
+            data = request.get_json()
+        except BadRequest:
+            return jsonify({"error": "Invalid JSON format"}), 400
+
+        try:
+            record = ExampleNamesVal(**data)
+        except ValidationError as e:
+            return jsonify({"error": e.errors()}), 400
+
+        session = session_factory()
+        new_record = ExampleNames(name=record.name)
+        session.add(new_record)
+        session.commit()
+        return jsonify({"message": "Record added successfully"}), 201
+    except KeyError:
+        return jsonify({"error": "Invalid JSON format or missing fields"}), 400
+    except SQLAlchemyError as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/search', methods=['GET'])
-def search_example_names():
-    name = request.args.get('name')
-    if not name:
-        return jsonify({'error': 'Name parameter is required'}), 400
+def search_records():
     try:
-        results = ExampleNames.query.filter(ExampleNames.name.ilike(f'%{name}%')).all()
+        name = request.args.get('name')
+        if not name:
+            return jsonify({"error": "Name parameter is required"}), 400
+
+        session = session_factory()
+        results = session.query(ExampleNames).filter(ExampleNames.name == name).all()
         if not results:
-            return jsonify({'message': 'No records found'}), 404
-        return jsonify([result.to_dict() for result in results]), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+            return jsonify({"message": "No records found"}), 404
+
+        return jsonify([record.to_dict() for record in results]), 200
+    except SQLAlchemyError as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)

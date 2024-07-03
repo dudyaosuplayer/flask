@@ -1,17 +1,19 @@
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+import datetime
+from sqlalchemy import text
+from sqlalchemy.orm import Mapped, mapped_column
+from db import Base, str_256
 
-db = SQLAlchemy()
 
-class ExampleNames(db.Model):
+class ExampleNames(Base):
     __tablename__ = 'example_names'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False)
-    added_on = db.Column(db.DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str_256]
+    created_at: Mapped[datetime.datetime] = mapped_column(server_default=text("TIMEZONE('utc', now())"))
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
-            'added_on': self.added_on
+            'created_at': self.created_at
         }
